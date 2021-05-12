@@ -6,7 +6,8 @@
   "scripts": {
     "build": "asb",
     "build:debug": "asb --target debug",
-    "test": "asp --nologo"
+    "test": "asp --nologo",
+    "dev": "yarn build:debug && near dev-deploy"
   },
   "author": "humanman.near",
   "license": "ISC",
@@ -18,6 +19,7 @@
     "near-sdk-as": "^3.1.0"
   },
   "devDependencies": {
-    "@as-pect/cli": "^6.0.0"
+    "@as-pect/cli": "^6.0.0",
+    "assemblyscript": "^0.18.31"
   }
 }

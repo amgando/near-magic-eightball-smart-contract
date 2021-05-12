@@ -1,113 +1,84 @@
-import { context, logging, storage, RNG, PersistentVector } from 'near-sdk-as';
-import { MAXLEN , questions} from './model';
-
-/**
- * answerMyQuestion is a
- * - "change" function (although it does NOT alter state, it DOES read from context)
- * - that takes string parameter
- * - and returns a random answer from storage
- *
- * - it has the side effect of appending to the log
- */
-export function answerMyQuestion(question: string): string {
-  logging.log("answerMyQuestion() was called");
-  // assert(question.length > 0, "Question can not be blank.");
-  // check for What, When, Where, Why at beginning. 
-  // instruct to ask yes/no question
-  // assert(/^what|when|where|why/.test.question == "false");
-  let answers = new PersistentVector<string>("av");
-  // // let answers = new Array<string>(20);
-
-  answers.push('As I see it, yes');
-  answers.push('Ask again later.');
-  answers.push('Better not tell you now.');
-  answers.push('Cannot predict now.');
-  answers.push('Concentrate and ask again.');
-  answers.push('Don\'t count on it.');
-  answers.push('It is certain.');
-  answers.push('It is decidedly so.');
-  answers.push('Most likely.');
-  answers.push('My reply is no.');
-  answers.push('My sources say no.');
-  answers.push('Outlook not so good.');
-  answers.push('Outlook good.');
-  answers.push('Reply hazy, try again.');
-  answers.push('Signs point to yes.');
-  answers.push('Very doubtful.');
-  answers.push('Without a doubt.');
-  answers.push('Yes.');
-  answers.push('Yes - definitely.');
-  answers.push('Yes may rely on it.');
-
-  const rng = new RNG<i32>(1, 20);
-  const rollIdx = rng.next();
-  logging.log(rollIdx);
-  // const idx = _getAnswerIdx();
-  return answers[rollIdx];
-
-}
-
-export function getValue(): string | null {
-  return storage.getString("state");
-}
-
-export function setValue(value: string): void {
-  logging.log("Setting value to " + value);
-  storage.setString("state", value);
-}
-
-/**
- * saveMyQuestion is a
- * - "change" function (ie. alters state)
- * - that takes no parameters
- * - saves the sender account name and message to contract state
- * - and returns nothing
- *
- * - it has the side effect of appending to the log
- */
-//  TODO: ideally this saves a record of the transaction (question / answer), but that may already be on the chain rendering this method redundant
-export function saveMyQuestion(question: string): boolean {
-  logging.log("saveMyQuestion() was called");
-
-  // assert(message.length > 0, "Message can not be blank.");
-
-  questions.pushFront(context.sender + " asks " + question);
-
-  return true;
-}
-
-// TODO: make an owner-only call
-export function addNewAnswerToOracle(answer: string): void {
-  // check length
-  // assert(answer.length > 0 && answer.length <= MAXLEN, "Submission must be more than 0 and fewer than " + MAXLEN + " characters long.")
-
-  // TODO: check for special characters e.g. Ben's ...
-  // should be new answer
-  const formattedAnswer = answer.substring(0, 1).toUpperCase() + answer.substring(1).toLowerCase();
-  // assert(answers.indexof(formattedAnswer) == -1, "That answer already exists!")
-  // answers.push(answer);
-}
+import { logging, RNG} from 'near-sdk-as';
+import { seedPersistentLayers, MAXLEN, answersSet, answersVector, historyVector, Session } from './model';
 
 
-// PRIVATE 
+@nearBindgen
+export class Magic8Ball {
 
-// simply - er - I mean magically calls random idx of answers set
-function _retrieveAnswer(): string {
-  const idx = _getAnswerIdx();
-  return answers[idx]
-}
+  constructor() {
+    seedPersistentLayers();
+  }
 
-function _getAnswerIdx(): i32 {
-  const idx = _random();
-  return idx;
-}
 
-// Using RNG module from near-sdk to handle Math.random
-function _random(): i32 {
-  const rng = new RNG<i32>(0, 20);
-  const rollIdx = rng.next();
-  // assert(rollIdx % 1 == 0 && rollIdx >= 0 && rollIdx < 20, "Random number out of range of answers set");
-  assert(rollIdx % 1 == 0, "Random number must be integer");
-  logging.log(rollIdx);
-  return rollIdx;
+  //// -- VIEW METHODS
+
+  // limit 10: throws memory out of bounds trap if too long
+  getSampleAnswers(): Array<string> {
+    const len = answersVector.length;
+    const resultList: Array<string> = [];
+    for (let i = 0; i < 10; i++) {
+      resultList[i] = answersVector[i];
+    }
+    return resultList;
+  }
+
+  // limit 10: throws memory out of bounds trap if too long
+  getHistory(): Array<Session> {
+    const resultList: Array<Session> = [];
+    for (let i = 0; i < 10; i++) {
+      resultList[i] = historyVector[i];
+    }
+    return resultList;
+  }
+
+
+  //// -- CHANGE METHODS
+
+  answerMyQuestion(question: string, save: bool = false): string {
+    logging.log('answerMyQuestion() called');
+    assert(question.length > 0, "Question can not be blank.");
+    const rng = new RNG<u8>(1, answersVector.length);
+    const rollIdx = rng.next();
+    const answer = answersVector[rollIdx];
+    if (save === true) {
+      const obj = new Session(question, answer);
+      historyVector.push(obj);
+    }
+    
+    return answer;
+  }
+
+  addNewAnswerToMagic8Ball(answerToAdd: string): string {
+    logging.log(answerToAdd);
+    // check length
+    assert(answerToAdd.length > 0 && answerToAdd.length <= MAXLEN, `Submission must be more than 0 and fewer than ${MAXLEN.toString()} characters long.`);
+
+    const lastChar = answerToAdd.substr(-1) === '.' ? answerToAdd.substr(-1) : '.';
+    // remove special characters for Set
+    const formattedForSet = this._removeCharfromString(answerToAdd)
+    // format to be capitalized with a period at end for Vector
+    const formattedForVector = answerToAdd.substr(0, 1).toUpperCase() + answerToAdd.substr(1, answerToAdd.length - 1).toLowerCase() + lastChar;
+
+    assert(!answersSet.has(formattedForSet), "That answer already exists!");
+    answersSet.add(formattedForSet);
+    answersVector.push(formattedForVector);
+
+    return answersVector.last;
+  }
+
+
+  //// -- PRIVATE METHODS
+
+  // workaround for RegEx until it's native in AS
+  private _removeCharfromString(str: string): string {
+    const charArr = ['.', '\'', '"', ',', '-', ' '];
+    let idx = 0;
+    let outputStr = str.toLowerCase();
+    while(idx < charArr.length) {
+      outputStr = outputStr.split(charArr[idx]).join('');
+      idx++
+    }  
+    return outputStr;
+  }
+
 }
